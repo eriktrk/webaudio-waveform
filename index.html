@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="icon.png">
+    <title>Web Audio Waveform Generator</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Top Bar -->
+        <div class="top-bar">
+            <div class="header-section">
+                <h1>Web Audio Waveform Generator</h1>
+                <p class="subtitle">Generate, visualize, and play custom waveforms</p>
+                <div class="social-link">
+                    <a href="https://x.com/erik_tark" target="_blank" rel="noopener noreferrer">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                        </svg>
+                        @erik_tark
+                    </a>
+                </div>
+                <br>
+                <span class="subtitle" title="GTA San Andreas theme melody">4 (1) 11 8.5 8 8.5 8 7 8 7 8 - 6 7 6 7 8 4 7 6 (4)</span>
+            </div>
+            <div id="video-section">
+                <div id="video-play-overlay" class="video-play-overlay">
+                    <div class="video-play-icon"></div>
+                </div>
+            </div>
+            <div class="presets-section">
+                <h3>Presets</h3>
+                <div class="presets-controls">
+                    <div class="preset-row">
+                        <input type="text" id="presetName" placeholder="Preset name..." class="preset-input">
+                        <button id="savePreset" class="btn">Save</button>
+                    </div>
+                    <div class="preset-row">
+                        <select id="presetSelect" class="preset-select">
+                            <option value="">Select preset...</option>
+                        </select>
+                        <button id="loadPreset" class="btn">Load</button>
+                        <button id="deletePreset" class="btn btn-danger">Delete</button>
+                    </div>
+                    <div class="preset-row">
+                        <button id="sharePreset" class="btn">Share Link</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Main Layout -->
+        <div class="main-layout">
+            <!-- Left Sidebar - Fundamental Wave -->
+            <div class="left-sidebar">
+                <div class="control-section">
+                    <h3>Fundamental Wave</h3>
+                    <div class="controls-grid">
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Frequency:</span>
+                                <span class="label-value"><span id="freqValue">440</span> Hz</span>
+                            </div>
+                            <input type="range" id="frequency" min="20" max="2000" value="440">
+                        </label>
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Amplitude:</span>
+                                <span class="label-value" id="ampValue">0.5</span>
+                            </div>
+                            <input type="range" id="amplitude" min="0" max="1" step="0.01" value="0.5">
+                        </label>
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Wave Type:</span>
+                            </div>
+                            <select id="waveType">
+                                <option value="sine">Sine</option>
+                                <option value="square">Square</option>
+                                <option value="sawtooth">Sawtooth</option>
+                                <option value="triangle">Triangle</option>
+                            </select>
+                        </label>
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Phase:</span>
+                                <span class="label-value"><span id="phaseValue">0</span>°</span>
+                            </div>
+                            <input type="range" id="phase" min="0" max="360" value="0">
+                        </label>
+                        <label id="smoothingControl" class="square-wave-control">
+                            <div class="label-row">
+                                <span class="label-text">Rise Time:</span>
+                                <span class="label-value" id="smoothingValue">0.10</span>
+                            </div>
+                            <input type="range" id="smoothing" min="0.01" max="1" step="0.01" value="0.10">
+                        </label>
+                        <label id="dutyCycleControl" class="square-wave-control">
+                            <div class="label-row">
+                                <span class="label-text">Duty Cycle:</span>
+                                <span class="label-value"><span id="dutyCycleValue">50</span>%</span>
+                            </div>
+                            <input type="range" id="dutyCycle" min="1" max="99" step="1" value="50">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Center - Waveform Display -->
+            <div class="center-content">
+                <div class="waveform-display">
+                    <canvas id="waveformCanvas" width="800" height="300"></canvas>
+                    <!-- Play/Volume Overlay -->
+                    <div class="play-overlay">
+                        <button id="playStopBtn" class="btn btn-primary">Play</button>
+                        <label class="volume-control">
+                            Volume: <span id="volumeValue">50</span>%
+                            <input type="range" id="volume" min="0" max="100" value="50">
+                        </label>
+                    </div>
+                    <div class="display-controls">
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Time Scale:</span>
+                                <span class="label-value"><span id="timeScaleValue">1.00</span>ms/div</span>
+                            </div>
+                            <input type="range" id="timeScale" min="0.1" max="10" step="0.1" value="1">
+                        </label>
+                        <label>
+                            <div class="label-row">
+                                <span class="label-text">Amplitude Scale:</span>
+                                <span class="label-value"><span id="ampScaleValue">1.00</span>V/div</span>
+                            </div>
+                            <input type="range" id="ampScale" min="0.1" max="5" step="0.1" value="1">
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Right Sidebar - Modulation -->
+            <div class="right-sidebar">
+                <div class="control-section">
+                    <h3>Modulation</h3>
+                    <div class="modulation-grid">
+                        <div class="mod-group">
+                            <label>
+                                <input type="checkbox" id="enableAM"> Amplitude Modulation
+                            </label>
+                            <label class="slider-label">
+                                <div class="label-row">
+                                    <span class="label-text">AM Frequency:</span>
+                                    <span class="label-value"><span id="amFreqValue">5</span> Hz</span>
+                                </div>
+                                <input type="range" id="amFreq" min="0.1" max="50" step="0.1" value="5">
+                            </label>
+                            <label class="slider-label">
+                                <div class="label-row">
+                                    <span class="label-text">AM Depth:</span>
+                                    <span class="label-value" id="amDepthValue">0.5</span>
+                                </div>
+                                <input type="range" id="amDepth" min="0" max="1" step="0.01" value="0.5">
+                            </label>
+                        </div>
+                        <div class="mod-group">
+                            <label>
+                                <input type="checkbox" id="enableFM"> Frequency Modulation
+                            </label>
+                            <label class="slider-label">
+                                <div class="label-row">
+                                    <span class="label-text">FM Frequency:</span>
+                                    <span class="label-value"><span id="fmFreqValue">5</span> Hz</span>
+                                </div>
+                                <input type="range" id="fmFreq" min="0.1" max="50" step="0.1" value="5">
+                            </label>
+                            <label class="slider-label">
+                                <div class="label-row">
+                                    <span class="label-text">FM Depth:</span>
+                                    <span class="label-value"><span id="fmDepthValue">50</span> Hz</span>
+                                </div>
+                                <input type="range" id="fmDepth" min="0" max="200" step="1" value="50">
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Bar - Harmonics -->
+        <div class="bottom-bar">
+            <div class="harmonics-section">
+                <div class="harmonics-sidebar">
+                    <h3 class="harmonics-title">Harmonics</h3>
+                    <button id="addHarmonic" class="btn-add">Add</button>
+                </div>
+                <div class="harmonics-container" id="harmonicsContainer">
+                    <!-- Harmonic controls will be generated dynamically -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Toaster Notifications -->
+        <div id="toaster" class="toaster"></div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+    <script src="script.js" type="module"></script>
+</body>
+</html> 
