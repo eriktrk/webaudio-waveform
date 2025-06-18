@@ -30,7 +30,6 @@ class WaveformGenerator {
         
         // Harmonics array - each harmonic has frequency multiplier and amplitude
         this.harmonics = [];
-        this.harmonicCounter = 0;
         
         // Modulation parameters
         this.amEnabled = false;
@@ -398,6 +397,54 @@ class WaveformGenerator {
         document.getElementById('sharePreset').addEventListener('click', () => {
             this.sharePreset();
         });
+        
+        // Collapsible sections
+        this.setupCollapsibleSections();
+    }
+    
+    /**
+     * Setup collapsible sections with toggle functionality
+     */
+    setupCollapsibleSections() {
+        // Header toggle
+        const headerToggle = document.getElementById('headerToggle');
+        const topBar = document.getElementById('topBar');
+        if (headerToggle && topBar) {
+            headerToggle.addEventListener('click', () => {
+                topBar.classList.toggle('collapsed');
+                headerToggle.classList.toggle('collapsed');
+            });
+        }
+        
+        // Fundamental Wave section
+        const fundamentalToggle = document.getElementById('fundamentalToggle');
+        const fundamentalSection = document.getElementById('fundamentalSection');
+        if (fundamentalToggle && fundamentalSection) {
+            fundamentalToggle.addEventListener('click', () => {
+                fundamentalSection.classList.toggle('collapsed');
+                fundamentalToggle.classList.toggle('collapsed');
+            });
+        }
+        
+        // Modulation section
+        const modulationToggle = document.getElementById('modulationToggle');
+        const modulationSection = document.getElementById('modulationSection');
+        if (modulationToggle && modulationSection) {
+            modulationToggle.addEventListener('click', () => {
+                modulationSection.classList.toggle('collapsed');
+                modulationToggle.classList.toggle('collapsed');
+            });
+        }
+        
+        // Harmonics section
+        const harmonicsToggle = document.getElementById('harmonicsToggle');
+        const harmonicsSection = document.getElementById('harmonicsSection');
+        if (harmonicsToggle && harmonicsSection) {
+            harmonicsToggle.addEventListener('click', () => {
+                harmonicsSection.classList.toggle('collapsed');
+                harmonicsToggle.classList.toggle('collapsed');
+            });
+        }
     }
     
     /**
@@ -500,80 +547,15 @@ class WaveformGenerator {
      * Add a new harmonic control to the UI
      */
     addHarmonic() {
-        this.harmonicCounter++;
-        const harmonicId = this.harmonicCounter;
-        
         // Add to harmonics array
         this.harmonics.push({
-            id: harmonicId,
             multiplier: 2,
             amplitude: 0.3,
             phase: 0 // Phase in degrees
         });
         
-        // Create UI element
-        const container = document.getElementById('harmonicsContainer');
-        const harmonicDiv = document.createElement('div');
-        harmonicDiv.className = 'harmonic-control';
-        harmonicDiv.id = `harmonic-${harmonicId}`;
-        
-        harmonicDiv.innerHTML = `
-            <span>${harmonicId}</span>
-            <button class="delete-btn" onclick="waveformGen.removeHarmonic(${harmonicId})" title="Delete harmonic">🗑️</button>
-            <div>
-                <label>
-                    <div class="label-row">
-                        <span class="label-text">Multiplier:</span>
-                        <span class="label-value" id="harmonic-${harmonicId}-mult-value">2.00</span>
-                    </div>
-                    <input type="range" id="harmonic-${harmonicId}-mult" min="0.1" max="10" step="0.1" value="2">
-                </label>
-                <label>
-                    <div class="label-row">
-                        <span class="label-text">Amplitude:</span>
-                        <span class="label-value" id="harmonic-${harmonicId}-amp-value">0.30</span>
-                    </div>
-                    <input type="range" id="harmonic-${harmonicId}-amp" min="0" max="1" step="0.01" value="0.3">
-                </label>
-                <label>
-                    <div class="label-row">
-                        <span class="label-text">Phase:</span>
-                        <span class="label-value"><span id="harmonic-${harmonicId}-phase-value">0</span>°</span>
-                    </div>
-                    <input type="range" id="harmonic-${harmonicId}-phase" min="0" max="360" step="1" value="0">
-                </label>
-            </div>
-        `;
-        
-        container.appendChild(harmonicDiv);
-        
-        // Add event listeners for the new harmonic
-        this.addHarmonicSliderListener(`harmonic-${harmonicId}-mult`, `harmonic-${harmonicId}-mult-value`, (value) => {
-            const harmonic = this.harmonics.find(h => h.id === harmonicId);
-            if (harmonic) {
-                harmonic.multiplier = parseFloat(value);
-                this.updateWaveform();
-                this.updateAudioHarmonics();
-            }
-        });
-        
-        this.addHarmonicSliderListener(`harmonic-${harmonicId}-amp`, `harmonic-${harmonicId}-amp-value`, (value) => {
-            const harmonic = this.harmonics.find(h => h.id === harmonicId);
-            if (harmonic) {
-                harmonic.amplitude = parseFloat(value);
-                this.updateWaveform();
-                this.updateAudioHarmonics();
-            }
-        });
-        
-        this.addHarmonicSliderListener(`harmonic-${harmonicId}-phase`, `harmonic-${harmonicId}-phase-value`, (value) => {
-            const harmonic = this.harmonics.find(h => h.id === harmonicId);
-            if (harmonic) {
-                harmonic.phase = parseFloat(value);
-                this.updateWaveform();
-                this.updateAudioHarmonics();
-            }
-        });
+        // Recalculate and rebuild all harmonics
+        this.rebuildAllHarmonics();
         
         this.updateWaveform();
         this.updateAudioHarmonics();
@@ -582,18 +564,90 @@ class WaveformGenerator {
     /**
      * Remove a harmonic from the system
      */
-    removeHarmonic(id) {
-        // Remove from array
-        this.harmonics = this.harmonics.filter(h => h.id !== id);
+    removeHarmonic(index) {
+        // Remove from array (index is 0-based)
+        this.harmonics.splice(index, 1);
         
-        // Remove from UI
-        const element = document.getElementById(`harmonic-${id}`);
-        if (element) {
-            element.remove();
-        }
+        // Recalculate and rebuild all harmonics
+        this.rebuildAllHarmonics();
         
         this.updateWaveform();
         this.updateAudioHarmonics();
+    }
+    
+    /**
+     * Rebuild all harmonic UI elements with sequential numbering
+     */
+    rebuildAllHarmonics() {
+        const container = document.getElementById('harmonicsContainer');
+        
+        // Clear all existing harmonic controls
+        container.innerHTML = '';
+        
+        // Rebuild each harmonic with sequential ID (1-based display)
+        this.harmonics.forEach((harmonic, index) => {
+            const harmonicId = index + 1; // Display as 1, 2, 3, etc.
+            
+            // Create UI element
+            const harmonicDiv = document.createElement('div');
+            harmonicDiv.className = 'harmonic-control';
+            harmonicDiv.id = `harmonic-${harmonicId}`;
+            
+            harmonicDiv.innerHTML = `
+                <span>${harmonicId}</span>
+                <button class="delete-btn" data-harmonic-index="${index}" title="Delete harmonic">🗑️</button>
+                <div>
+                    <label>
+                        <div class="label-row">
+                            <span class="label-text">Multiplier:</span>
+                            <span class="label-value" id="harmonic-${harmonicId}-mult-value">${harmonic.multiplier.toFixed(2)}</span>
+                        </div>
+                        <input type="range" id="harmonic-${harmonicId}-mult" min="0.1" max="10" step="0.1" value="${harmonic.multiplier}">
+                    </label>
+                    <label>
+                        <div class="label-row">
+                            <span class="label-text">Amplitude:</span>
+                            <span class="label-value" id="harmonic-${harmonicId}-amp-value">${harmonic.amplitude.toFixed(2)}</span>
+                        </div>
+                        <input type="range" id="harmonic-${harmonicId}-amp" min="0" max="1" step="0.01" value="${harmonic.amplitude}">
+                    </label>
+                    <label>
+                        <div class="label-row">
+                            <span class="label-text">Phase:</span>
+                            <span class="label-value"><span id="harmonic-${harmonicId}-phase-value">${harmonic.phase}</span>°</span>
+                        </div>
+                        <input type="range" id="harmonic-${harmonicId}-phase" min="0" max="360" step="1" value="${harmonic.phase}">
+                    </label>
+                </div>
+            `;
+            
+            // Add event listener for delete button
+            const deleteBtn = harmonicDiv.querySelector('.delete-btn');
+            deleteBtn.addEventListener('click', () => {
+                this.removeHarmonic(index);
+            });
+            
+            container.appendChild(harmonicDiv);
+            
+            // Add event listeners for the harmonic controls
+            this.addHarmonicSliderListener(`harmonic-${harmonicId}-mult`, `harmonic-${harmonicId}-mult-value`, (value) => {
+                this.harmonics[index].multiplier = parseFloat(value);
+                this.updateWaveform();
+                this.updateAudioHarmonics();
+            });
+            
+            this.addHarmonicSliderListener(`harmonic-${harmonicId}-amp`, `harmonic-${harmonicId}-amp-value`, (value) => {
+                this.harmonics[index].amplitude = parseFloat(value);
+                this.updateWaveform();
+                this.updateAudioHarmonics();
+            });
+            
+            this.addHarmonicSliderListener(`harmonic-${harmonicId}-phase`, `harmonic-${harmonicId}-phase-value`, (value) => {
+                this.harmonics[index].phase = parseFloat(value);
+                this.updateWaveform();
+                this.updateAudioHarmonics();
+            });
+        });
     }
     
     /**
@@ -689,8 +743,9 @@ class WaveformGenerator {
      */
     drawGrid() {
         const ctx = this.ctx;
-        const width = this.canvas.width;
-        const height = this.canvas.height;
+        // Use stored display dimensions for drawing calculations
+        const width = this.canvasDisplayWidth || parseInt(this.canvas.style.width) || this.canvas.width;
+        const height = this.canvasDisplayHeight || parseInt(this.canvas.style.height) || this.canvas.height;
         
         // Clear canvas with black background
         ctx.fillStyle = '#000000';
@@ -698,7 +753,7 @@ class WaveformGenerator {
         
         // Grid settings
         const gridSpacing = 40; // pixels per division
-        const centerY = height / 2;
+        const centerY = height * 0.6; // Shifted 20% lower from center
         
         ctx.strokeStyle = '#333333';
         ctx.lineWidth = 1;
@@ -742,9 +797,10 @@ class WaveformGenerator {
      */
     drawWaveform() {
         const ctx = this.ctx;
-        const width = this.canvas.width;
-        const height = this.canvas.height;
-        const centerY = height / 2;
+        // Use stored display dimensions for drawing calculations
+        const width = this.canvasDisplayWidth || parseInt(this.canvas.style.width) || this.canvas.width;
+        const height = this.canvasDisplayHeight || parseInt(this.canvas.style.height) || this.canvas.height;
+        const centerY = height * 0.6; // Shifted 20% lower from center
         
         // Draw grid first
         this.drawGrid();
@@ -840,9 +896,10 @@ class WaveformGenerator {
         const rms = Math.sqrt(this.waveformData.reduce((sum, val) => sum + val * val, 0) / this.bufferSize);
         ctx.fillText(`RMS: ${rms.toFixed(3)}V`, 10, 60);
         
-        // Time/div and V/div indicators
-        ctx.fillText(`${this.timeScale.toFixed(1)}ms/div`, this.canvas.width - 100, 20);
-        ctx.fillText(`${this.ampScale.toFixed(1)}V/div`, this.canvas.width - 100, 40);
+        // Time/div and V/div indicators  
+        const displayWidth = this.canvasDisplayWidth || parseInt(this.canvas.style.width) || this.canvas.width;
+        ctx.fillText(`${this.timeScale.toFixed(1)}ms/div`, displayWidth - 100, 20);
+        ctx.fillText(`${this.ampScale.toFixed(1)}V/div`, displayWidth - 100, 40);
     }
     
     /**
@@ -875,9 +932,13 @@ class WaveformGenerator {
                     return;
                 }
                 
-                // Use CSS-defined size from the canvas element
+                // Get canvas container size
+                const container = this.canvas.parentElement;
+                const containerRect = container.getBoundingClientRect();
+                
+                // Use container size or CSS-defined size from the canvas element
                 const canvasStyle = getComputedStyle(this.canvas);
-                const targetWidth = parseInt(canvasStyle.width, 10) || 800;
+                const targetWidth = Math.floor(containerRect.width) || parseInt(canvasStyle.width, 10) || 800;
                 const targetHeight = parseInt(canvasStyle.height, 10) || 300;
                 
                 // Check if dimensions actually changed significantly (avoid 1px fluctuations)
@@ -885,7 +946,8 @@ class WaveformGenerator {
                 const heightChanged = Math.abs(targetHeight - lastHeight) > 2;
                 
                 if (widthChanged || heightChanged) {
-                    const pixelRatio = window.devicePixelRatio || 1;
+                    // Limit pixel ratio for better performance on mobile
+                    const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
                     
                     // Calculate canvas dimensions with pixel ratio
                     const canvasWidth = Math.floor(targetWidth * pixelRatio);
@@ -905,10 +967,17 @@ class WaveformGenerator {
                         this.ctx.setTransform(1, 0, 0, 1, 0, 0); // Reset transforms
                         this.ctx.scale(pixelRatio, pixelRatio);
                         
+                        // Store CSS dimensions for drawing calculations
+                        this.canvasDisplayWidth = targetWidth;
+                        this.canvasDisplayHeight = targetHeight;
+                        this.pixelRatio = pixelRatio;
+                        
                         // Update tracking variables
                         lastWidth = targetWidth;
                         lastHeight = targetHeight;
                         resizeCount++;
+                        
+                        console.log(`Canvas resized: ${targetWidth}x${targetHeight} (CSS) -> ${canvasWidth}x${canvasHeight} (internal), ratio: ${pixelRatio}`);
                         
                         // Redraw the waveform
                         this.drawWaveform();
@@ -917,16 +986,64 @@ class WaveformGenerator {
                         setTimeout(() => { resizeCount = 0; }, 1000);
                     }
                 }
-            }, 50); // Increased debounce time
+            }, 100); // Increased debounce time for mobile
         };
         
         // Use window resize listener to avoid ResizeObserver feedback loops
         window.addEventListener('resize', resizeCanvas);
         
+        // Add orientation change listener for mobile devices
+        window.addEventListener('orientationchange', () => {
+            setTimeout(resizeCanvas, 100);
+        });
+        
         // Initial resize after layout stabilizes
         setTimeout(() => {
             resizeCanvas();
         }, 200);
+        
+        // Setup touch interactions for mobile
+        this.setupMobileInteractions();
+    }
+    
+    /**
+     * Setup mobile-specific interactions
+     */
+    setupMobileInteractions() {
+        // Prevent zoom on double tap for canvas and controls
+        const preventZoom = (e) => {
+            if (e.touches && e.touches.length > 1) {
+                e.preventDefault();
+            }
+        };
+        
+        // Add touch event listeners
+        document.addEventListener('touchstart', preventZoom, { passive: false });
+        document.addEventListener('touchmove', preventZoom, { passive: false });
+        
+        // Improve slider responsiveness on mobile
+        const sliders = document.querySelectorAll('input[type="range"]');
+        sliders.forEach(slider => {
+            slider.addEventListener('touchstart', (e) => {
+                e.stopPropagation();
+            });
+            
+            slider.addEventListener('touchmove', (e) => {
+                e.stopPropagation();
+            });
+        });
+        
+        // Add mobile-friendly button interactions
+        const buttons = document.querySelectorAll('.btn');
+        buttons.forEach(button => {
+            button.addEventListener('touchstart', function() {
+                this.style.transform = 'translateY(0px) scale(0.98)';
+            });
+            
+            button.addEventListener('touchend', function() {
+                this.style.transform = '';
+            });
+        });
     }
     
     /**
@@ -1446,6 +1563,9 @@ class WaveformGenerator {
              });
          }
          
+         // Rebuild all harmonic UI elements
+         this.rebuildAllHarmonics();
+         
          this.updateWaveform();
      }
      
@@ -1472,7 +1592,6 @@ class WaveformGenerator {
          document.getElementById('dutyCycleValue').textContent = this.dutyCycle.toFixed(0);
          
          document.getElementById('volume').value = this.volume * 100;
-         document.getElementById('volumeValue').textContent = (this.volume * 100).toFixed(0);
          
          // Modulation controls
          document.getElementById('enableAM').checked = this.amEnabled;
@@ -1501,79 +1620,11 @@ class WaveformGenerator {
       * Add harmonic from saved data
       */
      addHarmonicFromData(harmonicData) {
-         this.harmonicCounter++;
-         const harmonicId = this.harmonicCounter;
-         
          // Add to harmonics array
          this.harmonics.push({
-             id: harmonicId,
              multiplier: harmonicData.multiplier,
              amplitude: harmonicData.amplitude,
              phase: harmonicData.phase
-         });
-         
-         // Create UI element
-         const container = document.getElementById('harmonicsContainer');
-         const harmonicDiv = document.createElement('div');
-         harmonicDiv.className = 'harmonic-control';
-         harmonicDiv.id = `harmonic-${harmonicId}`;
-         
-         harmonicDiv.innerHTML = `
-             <span>${harmonicId}</span>
-             <button class="delete-btn" onclick="waveformGen.removeHarmonic(${harmonicId})" title="Delete harmonic">🗑️</button>
-             <div>
-                 <label>
-                     <div class="label-row">
-                         <span class="label-text">Multiplier:</span>
-                         <span class="label-value" id="harmonic-${harmonicId}-mult-value">${harmonicData.multiplier.toFixed(2)}</span>
-                     </div>
-                     <input type="range" id="harmonic-${harmonicId}-mult" min="0.1" max="10" step="0.1" value="${harmonicData.multiplier}">
-                 </label>
-                 <label>
-                     <div class="label-row">
-                         <span class="label-text">Amplitude:</span>
-                         <span class="label-value" id="harmonic-${harmonicId}-amp-value">${harmonicData.amplitude.toFixed(2)}</span>
-                     </div>
-                     <input type="range" id="harmonic-${harmonicId}-amp" min="0" max="1" step="0.01" value="${harmonicData.amplitude}">
-                 </label>
-                 <label>
-                     <div class="label-row">
-                         <span class="label-text">Phase:</span>
-                         <span class="label-value"><span id="harmonic-${harmonicId}-phase-value">${harmonicData.phase}</span>°</span>
-                     </div>
-                     <input type="range" id="harmonic-${harmonicId}-phase" min="0" max="360" step="1" value="${harmonicData.phase}">
-                 </label>
-             </div>
-         `;
-         
-         container.appendChild(harmonicDiv);
-         
-         // Add event listeners for the new harmonic
-         this.addHarmonicSliderListener(`harmonic-${harmonicId}-mult`, `harmonic-${harmonicId}-mult-value`, (value) => {
-             const harmonic = this.harmonics.find(h => h.id === harmonicId);
-             if (harmonic) {
-                 harmonic.multiplier = parseFloat(value);
-                 this.updateWaveform();
-                 this.updateAudioHarmonics();
-             }
-         });
-         
-         this.addHarmonicSliderListener(`harmonic-${harmonicId}-amp`, `harmonic-${harmonicId}-amp-value`, (value) => {
-             const harmonic = this.harmonics.find(h => h.id === harmonicId);
-             if (harmonic) {
-                 harmonic.amplitude = parseFloat(value);
-                 this.updateWaveform();
-                 this.updateAudioHarmonics();
-             }
-         });
-         
-         this.addHarmonicSliderListener(`harmonic-${harmonicId}-phase`, `harmonic-${harmonicId}-phase-value`, (value) => {
-             const harmonic = this.harmonics.find(h => h.id === harmonicId);
-             if (harmonic) {
-                 harmonic.phase = parseFloat(value);
-                 this.updateWaveform();
-                 this.updateAudioHarmonics();
-             }
          });
      }
      
@@ -1767,7 +1818,7 @@ class WaveformGenerator {
  }
  
  // Initialize the waveform generator when the page loads
- let waveformGen;
- document.addEventListener('DOMContentLoaded', () => {
-     waveformGen = new WaveformGenerator();
- }); 
+window.waveformGen = null;
+document.addEventListener('DOMContentLoaded', () => {
+    window.waveformGen = new WaveformGenerator();
+}); 

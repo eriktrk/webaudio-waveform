@@ -5,47 +5,50 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="icon" href="icon.png">
     <title>Web Audio Waveform Generator</title>
-    <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="app.css">
 </head>
 <body>
     <div class="container">
         <!-- Top Bar -->
-        <div class="top-bar">
-            <div class="header-section">
-                <h1>Web Audio Waveform Generator</h1>
-                <p class="subtitle">Generate, visualize, and play custom waveforms</p>
-                <div class="social-link">
-                    <a href="https://x.com/erik_tark" target="_blank" rel="noopener noreferrer">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
-                        </svg>
-                        @erik_tark
-                    </a>
-                </div>
-                <br>
-                <span class="subtitle" title="GTA San Andreas theme melody">4 (1) 11 8.5 8 8.5 8 7 8 7 8 - 6 7 6 7 8 4 7 6 (4)</span>
-            </div>
-            <div id="video-section">
-                <div id="video-play-overlay" class="video-play-overlay">
-                    <div class="video-play-icon"></div>
-                </div>
-            </div>
-            <div class="presets-section">
-                <h3>Presets</h3>
-                <div class="presets-controls">
-                    <div class="preset-row">
-                        <input type="text" id="presetName" placeholder="Preset name..." class="preset-input">
-                        <button id="savePreset" class="btn">Save</button>
+        <div class="top-bar collapsed" id="topBar">
+            <h1 style="margin: 0; font-size: 1.2rem; color: var(--accent-green);">Web Audio Waveform Generator</h1>
+            <button class="header-toggle section-toggle collapsed" id="headerToggle">▲</button>
+            <div class="header-content" id="headerContent">
+                <div class="header-section">
+                    <p class="subtitle">Generate, visualize, and play custom waveforms</p>
+                    <div class="social-link">
+                        <a href="https://x.com/erik_tark" target="_blank" rel="noopener noreferrer">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+                                <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z"/>
+                            </svg>
+                            @erik_tark
+                        </a>
                     </div>
-                    <div class="preset-row">
-                        <select id="presetSelect" class="preset-select">
-                            <option value="">Select preset...</option>
-                        </select>
-                        <button id="loadPreset" class="btn">Load</button>
-                        <button id="deletePreset" class="btn btn-danger">Delete</button>
+                    <br>
+                    <span class="subtitle" title="GTA San Andreas theme melody">4 (1) 11 8.5 8 8.5 8 7 8 7 8 - 6 7 6 7 8 4 7 6 (4)</span>
+                </div>
+                <div id="video-section">
+                    <div id="video-play-overlay" class="video-play-overlay">
+                        <div class="video-play-icon"></div>
                     </div>
-                    <div class="preset-row">
-                        <button id="sharePreset" class="btn">Share Link</button>
+                </div>
+                <div class="presets-section">
+                    <h3>Presets</h3>
+                    <div class="presets-controls">
+                        <div class="preset-row">
+                            <input type="text" id="presetName" placeholder="Preset name..." class="preset-input">
+                            <button id="savePreset" class="btn">Save</button>
+                        </div>
+                        <div class="preset-row">
+                            <select id="presetSelect" class="preset-select">
+                                <option value="">Select preset...</option>
+                            </select>
+                            <button id="loadPreset" class="btn">Load</button>
+                            <button id="deletePreset" class="btn btn-danger">Delete</button>
+                        </div>
+                        <div class="preset-row">
+                            <button id="sharePreset" class="btn">🔗 Copy Link to Preset</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -55,8 +58,11 @@
         <div class="main-layout">
             <!-- Left Sidebar - Fundamental Wave -->
             <div class="left-sidebar">
-                <div class="control-section">
-                    <h3>Fundamental Wave</h3>
+                <div class="control-section" id="fundamentalSection">
+                    <h3>
+                        <span>Fundamental Wave</span>
+                        <button class="section-toggle" id="fundamentalToggle">▲</button>
+                    </h3>
                     <div class="controls-grid">
                         <label>
                             <div class="label-row">
@@ -116,7 +122,7 @@
                     <div class="play-overlay">
                         <button id="playStopBtn" class="btn btn-primary">Play</button>
                         <label class="volume-control">
-                            Volume: <span id="volumeValue">50</span>%
+                            Volume:
                             <input type="range" id="volume" min="0" max="100" value="50">
                         </label>
                     </div>
@@ -141,8 +147,11 @@
 
             <!-- Right Sidebar - Modulation -->
             <div class="right-sidebar">
-                <div class="control-section">
-                    <h3>Modulation</h3>
+                <div class="control-section" id="modulationSection">
+                    <h3>
+                        <span>Modulation</span>
+                        <button class="section-toggle" id="modulationToggle">▲</button>
+                    </h3>
                     <div class="modulation-grid">
                         <div class="mod-group">
                             <label>
@@ -189,9 +198,12 @@
 
         <!-- Bottom Bar - Harmonics -->
         <div class="bottom-bar">
-            <div class="harmonics-section">
+            <div class="harmonics-section" id="harmonicsSection">
                 <div class="harmonics-sidebar">
-                    <h3 class="harmonics-title">Harmonics</h3>
+                    <h3 class="harmonics-title">
+                        <span>Harmonics</span>
+                        <button class="section-toggle" id="harmonicsToggle">▲</button>
+                    </h3>
                     <button id="addHarmonic" class="btn-add">Add</button>
                 </div>
                 <div class="harmonics-container" id="harmonicsContainer">
