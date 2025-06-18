@@ -1,5 +1,7 @@
 # Web Audio Waveform Generator
 
+See it live [here](https://ladcad.eu/fun/webaudio-waveform)
+
 A sophisticated web application for generating, visualizing, and playing custom waveforms using the Web Audio API. Features professional oscilloscope-style visualization, hand gesture controls, and advanced harmonic synthesis.
 
 ## Features
