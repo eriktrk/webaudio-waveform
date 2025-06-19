@@ -256,6 +256,49 @@ class WaveformGenerator {
     }
     
     /**
+     * Setup hand gesture event handlers (extracted for reuse when recreating instances)
+     */
+    setupHandGestureEventHandlers() {
+        if (!this.handGestures) {
+            console.warn('Cannot setup event handlers: handGestures instance not available');
+            return;
+        }
+        
+        // Set up hand gesture event handlers
+        this.handGestures.events.on('move', (x, y, data) => {
+            // Don't process musical input if hovering over UI elements
+            if (data && data.hoveredElement) {
+                return;
+            }
+            
+            // x coordinate is already properly adjusted by MediaPipe based on flip state
+            // x is 0 to 100, map to frequency notes
+            let frequency = 2000 - (x * 15);
+            // Calculate note index based on hand position
+            const noteIndex = Math.floor(x / (100 / this.notes.length));
+            frequency = this.notes[noteIndex];
+
+            if (!frequency) { return; }
+
+            this.frequency = frequency;
+            this.updateAudioFrequency();
+            this.updateWaveform();
+            
+            // Update keyboard highlighting based on pinch state
+            const isPinching = this.handGestures.isPinchActive();
+            this.updateKeyboardHighlight(noteIndex, isPinching);
+        });
+
+        this.handGestures.events.on('pinch', (pinch) => {
+            // Don't toggle playback if hovering over UI elements
+            if (this.handGestures.hoveredElement) {
+                return;
+            }
+            this.togglePlayback(pinch ? 'on' : 'off');
+        });
+    }
+    
+    /**
      * Calculate frequencies for notes and return sorted arrays with padding
      */
     calculateNotesAndFrequencies(noteNames) {
@@ -435,25 +478,11 @@ class WaveformGenerator {
         const videoOverlay = document.getElementById('video-overlay');
         const gesturePlayBtn = document.getElementById('gesturePlayBtn');
         
-        // Initialize hand gestures system (but don't start it yet)
-        this.handGestures = new HandGestures({
-            width: 640,               // Reduced size to help with WebGL memory
-            height: 480,
-            moveMode: 'absolute',
-            pinchThreshold: 30,
-            alwaysEmitMove: true,     // Enable move events without gestures
-            alwaysShowDots: true,     // Always show thumb/index dots
-        });
-        
-        // Store flip state for keyboard overlay synchronization
-        this.isVideoFlipped = this.handGestures.settings.flipHorizontal;
-        
-        // MediaPipe handles video flipping internally
-        
         // Track gesture system state
         this.gesturesInitialized = false;
         this.gesturesRunning = false;
         this.hasEverUsedVideoMode = false; // Track if user has ever entered video mode
+        this.handGestures = null; // Will be created when needed
         
         // Melody guide for GTA San Andreas theme
         // 1/4 = quarter note, 1/2 = half note, 1 = whole note
@@ -517,39 +546,7 @@ class WaveformGenerator {
         this.createKeyboardOverlay();
         
         // Flip button will be created as part of video controls when gestures start
-        
-        // Set up hand gesture event handlers
-        this.handGestures.events.on('move', (x, y, data) => {
-            // Don't process musical input if hovering over UI elements
-            if (data && data.hoveredElement) {
-                return;
-            }
-            
-            // x coordinate is already properly adjusted by MediaPipe based on flip state
-            // x is 0 to 100, map to frequency notes
-            let frequency = 2000 - (x * 15);
-            // Calculate note index based on hand position
-            const noteIndex = Math.floor(x / (100 / this.notes.length));
-            frequency = this.notes[noteIndex];
-
-            if (!frequency) { return; }
-
-            this.frequency = frequency;
-            this.updateAudioFrequency();
-            this.updateWaveform();
-            
-            // Update keyboard highlighting based on pinch state
-            const isPinching = this.handGestures.isPinchActive();
-            this.updateKeyboardHighlight(noteIndex, isPinching);
-        });
-
-        this.handGestures.events.on('pinch', (pinch) => {
-            // Don't toggle playback if hovering over UI elements
-            if (this.handGestures.hoveredElement) {
-                return;
-            }
-            this.togglePlayback(pinch ? 'on' : 'off');
-        });
+        // Event handlers will be set up when HandGestures instance is created
         
 
         
@@ -566,7 +563,28 @@ class WaveformGenerator {
                 // Show loading state
                 gesturePlayBtn.innerHTML = '<span style="opacity: 0.8;">📹 Starting...</span>';
                 
-                if (!this.gesturesInitialized) {
+                // Always create a new HandGestures instance to avoid MediaPipe WebAssembly corruption
+                // This is necessary because MediaPipe cannot reliably be reinitialized after close()
+                if (!this.gesturesInitialized || !this.handGestures) {
+                    // Small delay to ensure complete cleanup of previous instance
+                    await new Promise(resolve => setTimeout(resolve, 200));
+                    
+                    // Create fresh HandGestures instance
+                    this.handGestures = new HandGestures({
+                        width: 640,               // Reduced size to help with WebGL memory
+                        height: 480,
+                        moveMode: 'absolute',
+                        pinchThreshold: 30,
+                        alwaysEmitMove: true,     // Enable move events without gestures
+                        alwaysShowDots: true,     // Always show thumb/index dots
+                    });
+                    
+                    // Store flip state for keyboard overlay synchronization
+                    this.isVideoFlipped = this.handGestures.settings.flipHorizontal;
+                    
+                    // Set up hand gesture event handlers for the new instance
+                    this.setupHandGestureEventHandlers();
+                    
                     // Initialize gestures system
                     const initSuccess = await this.handGestures.init();
                     if (!initSuccess) {
@@ -631,6 +649,10 @@ class WaveformGenerator {
                 
                 // Hide video overlay on error
                 this.hideVideoOverlay();
+                
+                // Ensure clean state after error
+                this.gesturesInitialized = false;
+                this.handGestures = null;
             }
         });
     }
@@ -1043,7 +1065,10 @@ class WaveformGenerator {
      * Toggle camera flip
      */
     toggleCameraFlip() {
-        if (!this.handGestures) return;
+        if (!this.handGestures) {
+            this.showToast('Camera not available', 'warning');
+            return;
+        }
         
         // Toggle flip setting
         this.handGestures.settings.flipHorizontal = !this.handGestures.settings.flipHorizontal;
@@ -1135,16 +1160,17 @@ class WaveformGenerator {
                 // Hide video overlay and return to oscilloscope
                 this.hideVideoOverlay();
                 
-                // Always reset initialization state when stopping
-                // MediaPipe/WebGL resources get cleaned up and need fresh initialization
+                // Force complete cleanup and recreation due to MediaPipe WebAssembly module corruption
+                // MediaPipe has issues with reinitialization after calling close()
                 this.gesturesInitialized = false;
+                this.handGestures = null;
                 
                 this.showToast('Hand gestures stopped.', 'info');
                 
             } catch (error) {
                 console.error('Error stopping hand gestures:', error);
                 
-                // Reset the initialization state
+                // Force complete cleanup
                 this.gesturesInitialized = false;
                 this.handGestures = null;
                 

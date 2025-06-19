@@ -275,9 +275,18 @@ class HandGestures {
       
       if (handsToClose) {
         try {
-          handsToClose.close();
+          // Additional cleanup attempt for WebAssembly module
+          if (handsToClose.close) {
+            handsToClose.close();
+          }
+          
+          // Force garbage collection hint (not guaranteed but may help)
+          if (window.gc) {
+            window.gc();
+          }
         } catch (e) {
           console.warn('Error closing MediaPipe hands:', e);
+          // Continue cleanup even if close() fails
         }
       }
 
