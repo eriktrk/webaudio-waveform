@@ -41,29 +41,36 @@
                         </a>
                     </div>
                     <br>
-                    <span class="subtitle" title="GTA San Andreas theme melody">4 (1) 11 8.5 8 8.5 8 7 8 7 8 - 6 7 6 7 8 4 7 6 (4)</span>
                 </div>
-                <div id="video-section">
-                    <div id="video-play-overlay" class="video-play-overlay">
-                        <div class="video-play-icon"></div>
-                    </div>
-                </div>
+
                 <div class="presets-section">
-                    <h3>Presets</h3>
-                    <div class="presets-controls">
-                        <div class="preset-row">
-                            <input type="text" id="presetName" placeholder="Preset name..." class="preset-input">
-                            <button id="savePreset" class="btn">Save</button>
+                    <div class="presets-column">
+                        <h3>Presets</h3>
+                        <div class="presets-controls">
+                            <div class="preset-row">
+                                <input type="text" id="presetName" placeholder="Preset name..." class="preset-input">
+                                <button id="savePreset" class="btn">Save</button>
+                            </div>
+                            <div class="preset-row">
+                                <select id="presetSelect" class="preset-select">
+                                    <option value="">Select preset...</option>
+                                </select>
+                                <button id="loadPreset" class="btn">Load</button>
+                                <button id="deletePreset" class="btn btn-danger">Delete</button>
+                            </div>
+                            <div class="preset-row">
+                                <button id="sharePreset" class="btn">🔗 Copy Link to Preset</button>
+                            </div>
                         </div>
-                        <div class="preset-row">
-                            <select id="presetSelect" class="preset-select">
-                                <option value="">Select preset...</option>
-                            </select>
-                            <button id="loadPreset" class="btn">Load</button>
-                            <button id="deletePreset" class="btn btn-danger">Delete</button>
+                    </div>
+                    <div class="melody-column">
+                        <h3>Melody</h3>
+                        <div class="current-melody">
+                            <span id="currentMelodyName" class="melody-name" title="Current melody name">Loading...</span>
                         </div>
-                        <div class="preset-row">
-                            <button id="sharePreset" class="btn">🔗 Copy Link to Preset</button>
+                        <div class="melody-controls">
+                            <button id="copyMelody" class="btn" title="Copy current melody JSON to clipboard">📋 Copy</button>
+                            <button id="pasteMelody" class="btn" title="Paste melody JSON from clipboard">📁 Paste</button>
                         </div>
                     </div>
                 </div>
@@ -134,14 +141,21 @@
             <div class="center-content">
                 <div class="waveform-display">
                     <canvas id="waveformCanvas" width="800" height="300"></canvas>
-                    <!-- Play/Volume Overlay -->
-                    <div class="play-overlay">
-                        <button id="playStopBtn" class="btn btn-primary">Play</button>
+                    <!-- Video Overlay Container -->
+                    <div id="video-overlay" class="video-overlay hidden">
+                        <div id="video-section">
+                        </div>
+                    </div>
+                    <!-- Play Corner Tab (Top Left) -->
+                    <button id="playStopBtn" class="play-corner-tab">▶</button>
+                    <!-- Volume Center Tab (Top Center) -->
+                    <div class="volume-center-tab">
                         <label class="volume-control">
-                            Volume:
-                            <input type="range" id="volume" min="0" max="100" value="50">
+                            🔉<input type="range" id="volume" min="0" max="100" value="50">🔊
                         </label>
                     </div>
+                    <!-- Gesture Play Corner Tab (Top Right) -->
+                    <button id="gesturePlayBtn" class="gesture-corner-tab">📹👀</button>
                     <div class="display-controls">
                         <label>
                             <div class="label-row">
@@ -232,8 +246,6 @@
         <div id="toaster" class="toaster"></div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js" crossorigin="anonymous"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
     <script src="script.js" type="module"></script>
 </body>

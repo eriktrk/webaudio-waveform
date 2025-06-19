@@ -63,6 +63,14 @@ class WaveformGenerator {
 
         // Initialize hand gestures system with video overlay control
         this.initializeVideoGestures();
+        
+        // Initialize melody controls with copy/paste functionality
+        this.initializeMelodyInput();
+        
+        // Update melody name display after initialization
+        setTimeout(() => {
+            this.updateMelodyNameDisplay();
+        }, 100);
 
     }
     
@@ -77,63 +85,498 @@ class WaveformGenerator {
     }
 
     /**
+     * Initialize melody controls with copy/paste functionality
+     */
+    initializeMelodyInput() {
+        const copyMelodyBtn = document.getElementById('copyMelody');
+        const pasteMelodyBtn = document.getElementById('pasteMelody');
+        
+        if (!copyMelodyBtn || !pasteMelodyBtn) {
+            console.warn('Melody control elements not found');
+            return;
+        }
+        
+        // Add event listeners
+        copyMelodyBtn.addEventListener('click', () => {
+            this.copyMelodyToClipboard();
+        });
+        
+        pasteMelodyBtn.addEventListener('click', () => {
+            this.pasteMelodyFromClipboard();
+        });
+    }
+    
+    /**
+     * Copy current melody to clipboard as JSON
+     */
+    copyMelodyToClipboard() {
+        try {
+            const melodyJSON = JSON.stringify(this.melodyGuide, null, 2);
+            navigator.clipboard.writeText(melodyJSON).then(() => {
+                this.showToast('Melody copied to clipboard!', 'success');
+            }).catch(() => {
+                // Fallback for older browsers
+                this.fallbackCopyToClipboard(melodyJSON);
+            });
+        } catch (error) {
+            this.showToast('Error copying melody: ' + error.message, 'error');
+            console.error('Melody copy error:', error);
+        }
+    }
+    
+    /**
+     * Paste melody from clipboard and load it
+     */
+    async pasteMelodyFromClipboard() {
+        try {
+            const clipboardText = await navigator.clipboard.readText();
+            this.loadMelodyFromJSON(clipboardText);
+        } catch (error) {
+            // If clipboard API fails, show a prompt for manual paste
+            const pastedText = prompt('Paste melody JSON here:');
+            if (pastedText) {
+                this.loadMelodyFromJSON(pastedText);
+            }
+        }
+    }
+    
+    /**
+     * Load melody from JSON string
+     */
+    loadMelodyFromJSON(jsonString) {
+        try {
+            const melodyData = JSON.parse(jsonString);
+            
+            // Validate melody structure
+            if (!melodyData.tempo || !Array.isArray(melodyData.notes)) {
+                throw new Error('Invalid melody format. Must have "tempo" and "notes" array.');
+            }
+            
+            // Extract unique note names from melody (excluding rests)
+            const melodyNoteNames = new Set();
+            for (let i = 0; i < melodyData.notes.length; i++) {
+                const note = melodyData.notes[i];
+                if (!Array.isArray(note) || note.length !== 2) {
+                    throw new Error(`Invalid note at index ${i}. Each note must be [noteName, duration].`);
+                }
+                
+                const [noteName, duration] = note;
+                if (typeof noteName !== 'string' || typeof duration !== 'number') {
+                    throw new Error(`Invalid note at index ${i}. Format: ["NoteName", durationNumber].`);
+                }
+                
+                // Add non-rest notes to the set for frequency calculation
+                if (noteName.trim() !== '' && noteName !== ' ') {
+                    melodyNoteNames.add(noteName);
+                }
+            }
+            
+            // Calculate frequencies for all notes in the melody
+            const calculatedNotes = this.calculateNotesAndFrequencies(Array.from(melodyNoteNames));
+            
+            // Validate that all notes could be calculated
+            for (const noteName of melodyNoteNames) {
+                if (!calculatedNotes.noteNames.includes(noteName)) {
+                    throw new Error(`Unable to calculate frequency for note "${noteName}". Please use standard notation (e.g., C4, F#5, Bb3).`);
+                }
+            }
+            
+            // Update the notes and frequencies arrays
+            this.notes = calculatedNotes.frequencies;
+            this.noteNames = calculatedNotes.noteNames;
+            
+            // Apply the new melody
+            this.melodyGuide = melodyData;
+            
+            // If the loaded melody doesn't have a name, provide a default
+            if (!this.melodyGuide.name || this.melodyGuide.name.trim() === '') {
+                this.melodyGuide.name = 'Custom Melody';
+            }
+            
+            // Update melody name display
+            this.updateMelodyNameDisplay();
+            
+            // Handle keyboard overlay updates (both oscilloscope and video modes)
+            this.updateKeyboardAfterMelodyLoad();
+            
+            // Reset song guide if active
+            if (this.songGuideActive) {
+                this.currentSongNoteIndex = 0;
+                this.clearNoteTimer();
+                this.updateSongGuideDisplay();
+            }
+            
+            // Calculate how many original notes vs padding notes
+            const originalNotesCount = Array.from(melodyNoteNames).length;
+            const paddingNotesCount = calculatedNotes.noteNames.length - originalNotesCount;
+            
+            this.showToast(`Melody loaded successfully! ${calculatedNotes.noteNames.length} notes available (${originalNotesCount} melody + ${paddingNotesCount} padding).`, 'success');
+            
+        } catch (error) {
+            this.showToast('Error loading melody: ' + error.message, 'error');
+            console.error('Melody load error:', error);
+        }
+    }
+    
+    /**
+     * Fallback copy method for older browsers
+     */
+    fallbackCopyToClipboard(text) {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.select();
+        try {
+            document.execCommand('copy');
+            this.showToast('Melody copied to clipboard!', 'success');
+        } catch (err) {
+            this.showToast('Failed to copy melody. Please copy manually.', 'error');
+            console.error('Fallback copy failed:', err);
+        }
+        document.body.removeChild(textArea);
+    }
+    
+    /**
+     * Update the melody name display in the UI
+     */
+    updateMelodyNameDisplay() {
+        const melodyNameElement = document.getElementById('currentMelodyName');
+        if (!melodyNameElement) {
+            console.warn('Melody name display element not found');
+            return;
+        }
+        
+        // Get melody name from current melody guide
+        const melodyName = this.melodyGuide?.name || 'Untitled Melody';
+        melodyNameElement.textContent = melodyName;
+        
+        console.log(`Updated melody name display: "${melodyName}"`);
+    }
+    
+    /**
+     * Calculate frequencies for notes and return sorted arrays with padding
+     */
+    calculateNotesAndFrequencies(noteNames) {
+        const noteFrequencyPairs = [];
+        const midiNumbers = [];
+        
+        // Calculate frequency and MIDI number for each valid note
+        for (const noteName of noteNames) {
+            const frequency = this.noteNameToFrequency(noteName);
+            const midiNumber = this.noteNameToMIDI(noteName);
+            if (frequency !== null && midiNumber !== null) {
+                noteFrequencyPairs.push({ name: noteName, frequency: frequency, midi: midiNumber });
+                midiNumbers.push(midiNumber);
+            }
+        }
+        
+        // Add padding notes (one semitone below lowest and one semitone above highest)
+        if (midiNumbers.length > 0) {
+            const lowestMidi = Math.min(...midiNumbers);
+            const highestMidi = Math.max(...midiNumbers);
+            
+            // Add lower padding note (one semitone below)
+            const lowerPaddingMidi = lowestMidi - 1;
+            if (lowerPaddingMidi >= 0) {
+                const lowerPaddingNote = this.midiToNoteName(lowerPaddingMidi);
+                const lowerPaddingFreq = this.noteNameToFrequency(lowerPaddingNote);
+                if (lowerPaddingNote && lowerPaddingFreq !== null) {
+                    noteFrequencyPairs.push({ 
+                        name: lowerPaddingNote, 
+                        frequency: lowerPaddingFreq, 
+                        midi: lowerPaddingMidi,
+                        isPadding: true 
+                    });
+                }
+            }
+            
+            // Add higher padding note (one semitone above)
+            const higherPaddingMidi = highestMidi + 1;
+            if (higherPaddingMidi <= 127) {
+                const higherPaddingNote = this.midiToNoteName(higherPaddingMidi);
+                const higherPaddingFreq = this.noteNameToFrequency(higherPaddingNote);
+                if (higherPaddingNote && higherPaddingFreq !== null) {
+                    noteFrequencyPairs.push({ 
+                        name: higherPaddingNote, 
+                        frequency: higherPaddingFreq, 
+                        midi: higherPaddingMidi,
+                        isPadding: true 
+                    });
+                }
+            }
+        }
+        
+        // Sort by frequency (ascending)
+        noteFrequencyPairs.sort((a, b) => a.frequency - b.frequency);
+        
+        // Extract sorted arrays
+        const sortedNoteNames = noteFrequencyPairs.map(pair => pair.name);
+        const sortedFrequencies = noteFrequencyPairs.map(pair => pair.frequency);
+        
+        return {
+            noteNames: sortedNoteNames,
+            frequencies: sortedFrequencies
+        };
+    }
+    
+    /**
+     * Convert note name to frequency using equal temperament tuning
+     * @param {string} noteName - Note name in format like "A4", "C#5", "Bb3"
+     * @returns {number|null} - Frequency in Hz, or null if invalid note name
+     */
+    noteNameToFrequency(noteName) {
+        try {
+            const midiNumber = this.noteNameToMIDI(noteName);
+            if (midiNumber === null) return null;
+            
+            // Calculate frequency using equal temperament: f = 440 * 2^((n-69)/12)
+            // Where 69 is the MIDI number for A4 (440 Hz)
+            const frequency = 440 * Math.pow(2, (midiNumber - 69) / 12);
+            return Math.round(frequency * 100) / 100; // Round to 2 decimal places
+        } catch (error) {
+            console.warn(`Invalid note name: ${noteName}`);
+            return null;
+        }
+    }
+    
+    /**
+     * Convert note name to MIDI number
+     * @param {string} noteName - Note name in format like "A4", "C#5", "Bb3"
+     * @returns {number|null} - MIDI number (0-127), or null if invalid
+     */
+    noteNameToMIDI(noteName) {
+        const notePattern = /^([A-G])([#b]?)(\d+)$/;
+        const match = noteName.match(notePattern);
+        
+        if (!match) return null;
+        
+        const [, noteLetter, accidental, octaveStr] = match;
+        const octave = parseInt(octaveStr);
+        
+        // Validate octave range (MIDI supports 0-10, but we'll be more restrictive)
+        if (octave < 0 || octave > 10) return null;
+        
+        // Base MIDI numbers for each note in octave 0
+        const baseNotes = {
+            'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11
+        };
+        
+        let midiNumber = baseNotes[noteLetter] + (octave + 1) * 12;
+        
+        // Apply accidentals
+        if (accidental === '#') {
+            midiNumber += 1;
+        } else if (accidental === 'b') {
+            midiNumber -= 1;
+        }
+        
+        // Validate MIDI range
+        if (midiNumber < 0 || midiNumber > 127) return null;
+        
+        return midiNumber;
+    }
+    
+    /**
+     * Convert MIDI number to note name (using sharps for black keys)
+     * @param {number} midiNumber - MIDI number (0-127)
+     * @returns {string|null} - Note name in format like "A4", "C#5", or null if invalid
+     */
+    midiToNoteName(midiNumber) {
+        if (midiNumber < 0 || midiNumber > 127) return null;
+        
+        const octave = Math.floor(midiNumber / 12) - 1;
+        const noteInOctave = midiNumber % 12;
+        
+        // Note names using sharps for black keys
+        const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+        
+        return `${noteNames[noteInOctave]}${octave}`;
+    }
+    
+    /**
+     * Update keyboard overlay after melody load, handling both modes properly
+     */
+    updateKeyboardAfterMelodyLoad() {
+        const wasVisible = this.keyboardOverlay && this.keyboardOverlay.classList.contains('visible');
+        
+        // Recreate keyboard overlay with new notes
+        this.createKeyboardOverlay();
+        
+        // If we're in video mode (gestures running), handle special updates
+        if (this.gesturesRunning) {
+            // Show keyboard overlay if it was visible before
+            if (wasVisible) {
+                this.showKeyboardOverlay();
+            }
+            
+            // Update overlay coverage to ensure proper positioning
+            setTimeout(() => {
+                this.updateOverlayCoverage();
+            }, 50);
+            
+            // Re-register clickable elements with the hand gestures system
+            // This ensures the gesture interaction system knows about the updated keyboard
+            this.registerClickableElements();
+            
+            // Update hand gestures system with new note mapping
+            // The move event handler will use the updated this.notes and this.noteNames arrays
+            console.log(`Updated gesture keyboard: ${this.noteNames.length} notes ranging from ${this.noteNames[0]} to ${this.noteNames[this.noteNames.length - 1]}`);
+        }
+    }
+
+    /**
      * Initialize video gestures system with overlay controls
      */
     initializeVideoGestures() {
-        // Get video section and overlay elements
+        // Get video section and overlay elements (now in oscilloscope overlay)
         const videoSection = document.getElementById('video-section');
-        const playOverlay = document.getElementById('video-play-overlay');
+        const videoOverlay = document.getElementById('video-overlay');
+        const gesturePlayBtn = document.getElementById('gesturePlayBtn');
         
         // Initialize hand gestures system (but don't start it yet)
         this.handGestures = new HandGestures({
-            width: 360,
-            height: 240,
+            width: 640,               // Reduced size to help with WebGL memory
+            height: 480,
             moveMode: 'absolute',
+            pinchThreshold: 30,
+            alwaysEmitMove: true,     // Enable move events without gestures
+            alwaysShowDots: true,     // Always show thumb/index dots
         });
+        
+        // Store flip state for keyboard overlay synchronization
+        this.isVideoFlipped = this.handGestures.settings.flipHorizontal;
+        
+        // MediaPipe handles video flipping internally
         
         // Track gesture system state
         this.gesturesInitialized = false;
         this.gesturesRunning = false;
+        this.hasEverUsedVideoMode = false; // Track if user has ever entered video mode
         
-        // Musical notes for frequency mapping
-        const notes = [440.00, 587.33, 698.46, 783.99, 880.00, 932.33, 1174.66];
+        // Melody guide for GTA San Andreas theme
+        // 1/4 = quarter note, 1/2 = half note, 1 = whole note
+        // tempo 60 bpm means 1 second per quarter note
+        // empty string or ' ' = rest
+        this.melodyGuide = {
+            name: 'GTA San Andreas Theme',
+            tempo: 60,
+            notes:  [
+                ['D5', 1/8],
+                ['D6', 1/8],
+                ['Bb5', 1/8],
+                ['A5', 1/16],
+                ['Bb5', 1/16],
+                ['A5', 1/16],
+                ['G5', 1/16],
+                ['A5', 1/16],
+                ['G5', 1/16],
+                ['A5', 1/8],
+                [' ', 1/8],
+                ['F5', 1/8],
+                ['G5', 1/16],
+                ['F5', 1/16],
+                ['G5', 1/8],
+                ['A5', 1/8],
+                ['D5', 1/8],
+                ['G5', 1/8],
+                ['F5', 1/8],
+                [' ', 1/8],
+            ]
+        };
+        
+        // Calculate frequencies for notes in default melody with padding
+        const defaultMelodyNotes = new Set();
+        this.melodyGuide.notes.forEach(([noteName]) => {
+            if (noteName.trim() !== '' && noteName !== ' ') {
+                defaultMelodyNotes.add(noteName);
+            }
+        });
+        
+        // Calculate and set notes/frequencies from default melody (includes padding)
+        const calculatedNotes = this.calculateNotesAndFrequencies(Array.from(defaultMelodyNotes));
+        this.notes = calculatedNotes.frequencies;
+        this.noteNames = calculatedNotes.noteNames;
+        
+        console.log(`Default melody loaded: ${calculatedNotes.noteNames.length} total notes (${defaultMelodyNotes.size} melody + ${calculatedNotes.noteNames.length - defaultMelodyNotes.size} padding)`);
+
+        // Current active note index for keyboard highlighting
+        this.currentNoteIndex = -1;
+        
+        // Song guide state
+        this.songGuideActive = false;
+        this.currentSongNoteIndex = 0;
+        this.noteHoldTimer = null;
+        this.noteHoldDuration = 0;
+        this.requiredHoldTime = 500; // ms to hold note (calculated per note)
+        this.restTimer = null; // Timer for handling rest notes
+        this.isMaximized = false;
+        
+        // Create keyboard overlay
+        this.createKeyboardOverlay();
+        
+        // Flip button will be created as part of video controls when gestures start
         
         // Set up hand gesture event handlers
-        this.handGestures.events.on('move', (x, y) => {
-            // x is 100 to 0, map to frequency notes
+        this.handGestures.events.on('move', (x, y, data) => {
+            // Don't process musical input if hovering over UI elements
+            if (data && data.hoveredElement) {
+                return;
+            }
+            
+            // x coordinate is already properly adjusted by MediaPipe based on flip state
+            // x is 0 to 100, map to frequency notes
             let frequency = 2000 - (x * 15);
-            // Constrain to the notes array
-            frequency = notes[Math.floor((100-x) / (100 / notes.length))];
+            // Calculate note index based on hand position
+            const noteIndex = Math.floor(x / (100 / this.notes.length));
+            frequency = this.notes[noteIndex];
 
             if (!frequency) { return; }
 
             this.frequency = frequency;
             this.updateAudioFrequency();
             this.updateWaveform();
+            
+            // Update keyboard highlighting based on pinch state
+            const isPinching = this.handGestures.isPinchActive();
+            this.updateKeyboardHighlight(noteIndex, isPinching);
         });
 
         this.handGestures.events.on('pinch', (pinch) => {
+            // Don't toggle playback if hovering over UI elements
+            if (this.handGestures.hoveredElement) {
+                return;
+            }
             this.togglePlayback(pinch ? 'on' : 'off');
         });
         
-        // Handle overlay click - start gestures
-        playOverlay.addEventListener('click', async () => {
+
+        
+        // Set up stop overlay functionality
+        this.setupStopOverlay();
+        
+        // Set up gesture play button
+        gesturePlayBtn.addEventListener('click', async () => {
+            // Directly start gestures instead of just showing the overlay
             try {
-                // Show loading state by adding loading class
-                const playIcon = playOverlay.querySelector('.video-play-icon');
-                playIcon.classList.add('loading');
-                playIcon.style.opacity = '0.8';
+                // Show video overlay
+                this.showVideoOverlay();
+                
+                // Show loading state
+                gesturePlayBtn.innerHTML = '<span style="opacity: 0.8;">📹 Starting...</span>';
                 
                 if (!this.gesturesInitialized) {
                     // Initialize gestures system
                     const initSuccess = await this.handGestures.init();
                     if (!initSuccess) {
-                        throw new Error('Failed to initialize hand gestures');
+                        throw new Error('Failed to initialize hand gestures. This may be due to WebGL limitations or hardware compatibility issues. Try refreshing the page or using a different browser.');
                     }
                     this.gesturesInitialized = true;
                 }
                 
                 // Attach to video section and start
+                const videoSection = document.getElementById('video-section');
                 this.handGestures.attachTo(videoSection);
                 this.handGestures.showVisualization();
                 
@@ -144,56 +587,446 @@ class WaveformGenerator {
                 
                 this.gesturesRunning = true;
                 
-                // Hide play overlay and show stop overlay
-                playOverlay.classList.add('hidden');
+                // Mark that user has now used video mode (remove attention animation)
+                if (!this.hasEverUsedVideoMode) {
+                    this.hasEverUsedVideoMode = true;
+                    this.removeAttentionAnimation();
+                }
+                
+                // Show stop overlay
                 this.showStopOverlay();
                 
-                this.showToast('Hand gestures started! Move your hand to control frequency, pinch to play/stop audio.', 'success', 5000);
+                // Show keyboard overlay
+                this.showKeyboardOverlay();
+                
+                // Apply initial video transform for proper mirroring
+                const video = this.handGestures.getVideoElement();
+                if (video) {
+                    if (this.isVideoFlipped) {
+                        // Flipped mode: show actual camera view (with centering)
+                        video.style.transform = 'translate(-50%, -50%) scaleX(1)';
+                    } else {
+                        // Normal mode: mirror the video for natural interaction (with centering)
+                        video.style.transform = 'translate(-50%, -50%) scaleX(-1)';
+                    }
+                }
+                
+                // Register clickable elements for gesture interaction
+                this.registerClickableElements();
+                
+                // Hide play corner button and video mode corner button
+                this.hideCornerButtons();
+                
+                this.showToast('Hover and pinch to play notes.', 'success', 7000);
+                
+                // Reset button text
+                gesturePlayBtn.innerHTML = '📹';
                 
             } catch (error) {
                 console.error('Error starting hand gestures:', error);
                 this.showToast('Failed to start camera: ' + error.message, 'error');
                 
-                // Reset overlay to play state
-                playOverlay.innerHTML = '<div class="video-play-icon"></div>';
+                // Reset button
+                gesturePlayBtn.innerHTML = '📹';
+                
+                // Hide video overlay on error
+                this.hideVideoOverlay();
             }
         });
+    }
+    
+
+
+    /**
+     * Create keyboard overlay for visual note zones
+     */
+    createKeyboardOverlay() {
+        const videoSection = document.getElementById('video-section');
         
-        // Set up stop overlay functionality
-        this.setupStopOverlay();
+        // Remove existing keyboard overlay if it exists
+        const existingKeyboard = document.getElementById('keyboard-overlay');
+        if (existingKeyboard) {
+            existingKeyboard.remove();
+        }
+        
+        // Create keyboard overlay container
+        const keyboardOverlay = document.createElement('div');
+        keyboardOverlay.id = 'keyboard-overlay';
+        keyboardOverlay.className = 'keyboard-overlay';
+        
+        // Create keys for each note
+        this.noteNames.forEach((noteName, index) => {
+            const key = document.createElement('div');
+            key.className = 'keyboard-key';
+            key.dataset.noteIndex = index;
+            key.textContent = noteName;
+            key.title = `${noteName} (${this.notes[index].toFixed(1)} Hz)`;
+            keyboardOverlay.appendChild(key);
+        });
+        
+        videoSection.appendChild(keyboardOverlay);
+        this.keyboardOverlay = keyboardOverlay;
+        
+        // Apply horizontal flip if video is flipped
+        this.updateKeyboardOrientation();
     }
     
     /**
-     * Show stop overlay when gestures are running
+     * Update keyboard orientation to sync with video flip state
+     */
+    updateKeyboardOrientation() {
+        if (!this.keyboardOverlay) {
+            return;
+        }
+        
+        // MediaPipe coordinates are consistent regardless of flip setting
+        // Keep keyboard overlay orientation consistent with coordinate system
+        this.keyboardOverlay.style.transform = 'scaleX(1)';
+    }
+    
+    /**
+     * Update keyboard highlighting based on current note and pinch state
+     */
+    updateKeyboardHighlight(noteIndex, isPinching = false) {
+        if (!this.keyboardOverlay) {
+            return;
+        }
+        
+        // Remove previous highlighting from all keys
+        if (this.currentNoteIndex >= 0) {
+            const prevKey = this.keyboardOverlay.children[this.currentNoteIndex];
+            if (prevKey) {
+                prevKey.classList.remove('active', 'hover');
+            }
+        }
+        
+        // Add appropriate highlighting to current note
+        if (noteIndex >= 0 && noteIndex < this.noteNames.length) {
+            const currentKey = this.keyboardOverlay.children[noteIndex];
+            if (currentKey) {
+                if (isPinching) {
+                    // Show active state when pinching
+                    currentKey.classList.add('active');
+                    currentKey.classList.remove('hover');
+                    
+                    // Handle song guide if active
+                    this.handleSongGuideInput(noteIndex);
+                } else {
+                    // Show hover state when not pinching
+                    currentKey.classList.add('hover');
+                    currentKey.classList.remove('active');
+                    
+                    // Clear note timer if not pinching
+                    this.clearNoteTimer();
+                }
+            }
+        }
+        
+        this.currentNoteIndex = noteIndex;
+    }
+    
+    /**
+     * Handle song guide input and timing
+     */
+    handleSongGuideInput(noteIndex) {
+        if (!this.songGuideActive || this.currentSongNoteIndex >= this.melodyGuide.notes.length) {
+            return;
+        }
+        
+        const currentSongNote = this.melodyGuide.notes[this.currentSongNoteIndex];
+        const targetNoteName = currentSongNote[0];
+        const currentNoteName = this.noteNames[noteIndex];
+        
+        // Check if correct note is being pinched
+        if (currentNoteName === targetNoteName) {
+            // Start timer if not already running
+            if (!this.noteHoldTimer) {
+                this.startNoteTimer(noteIndex);
+            }
+        } else {
+            // Wrong note, clear timer
+            this.clearNoteTimer();
+        }
+    }
+    
+    /**
+     * Start note hold timer with visual fill effect
+     */
+    startNoteTimer(noteIndex) {
+        const startTime = Date.now();
+        this.noteHoldDuration = 0;
+        
+        const updateTimer = () => {
+            this.noteHoldDuration = Date.now() - startTime;
+            const fillPercent = Math.min(100, (this.noteHoldDuration / this.requiredHoldTime) * 100);
+            
+            // Update visual fill
+            const currentKey = this.keyboardOverlay.children[noteIndex];
+            if (currentKey) {
+                currentKey.style.setProperty('--fill-percent', `${fillPercent}%`);
+                currentKey.classList.add('timer-fill');
+            }
+            
+            if (this.noteHoldDuration >= this.requiredHoldTime) {
+                // Note held long enough, advance to next
+                this.advanceToNextNote();
+                this.clearNoteTimer();
+            } else if (this.noteHoldTimer) {
+                // Continue timer
+                this.noteHoldTimer = requestAnimationFrame(updateTimer);
+            }
+        };
+        
+        this.noteHoldTimer = requestAnimationFrame(updateTimer);
+    }
+    
+    /**
+     * Clear note hold timer and visual effects
+     */
+    clearNoteTimer() {
+        if (this.noteHoldTimer) {
+            cancelAnimationFrame(this.noteHoldTimer);
+            this.noteHoldTimer = null;
+        }
+        
+        // Clear visual fill from all keys
+        Array.from(this.keyboardOverlay.children).forEach(key => {
+            key.classList.remove('timer-fill');
+            key.style.removeProperty('--fill-percent');
+        });
+        
+        this.noteHoldDuration = 0;
+    }
+    
+    /**
+     * Handle rest notes by waiting for the specified duration
+     */
+    handleRestNote() {
+        // Clear any existing rest timer
+        if (this.restTimer) {
+            clearTimeout(this.restTimer);
+            this.restTimer = null;
+        }
+        
+        // Wait for the required rest duration then advance
+        this.restTimer = setTimeout(() => {
+            this.restTimer = null;
+            this.advanceToNextNote();
+        }, this.requiredHoldTime);
+    }
+    
+    /**
+     * Advance to next note in song guide
+     */
+    advanceToNextNote() {
+        this.currentSongNoteIndex++;
+        
+        if (this.currentSongNoteIndex >= this.melodyGuide.notes.length) {
+            // Song completed - restart from beginning
+            this.showToast('Song completed! Restarting... 🎉', 'success', 2000);
+            this.currentSongNoteIndex = 0;
+            this.updateSongGuideDisplay();
+        } else {
+            this.updateSongGuideDisplay();
+        }
+    }
+    
+    /**
+     * Update song guide visual display
+     */
+    updateSongGuideDisplay() {
+        if (!this.songGuideActive || !this.keyboardOverlay) {
+            return;
+        }
+        
+        // Clear previous target highlighting
+        Array.from(this.keyboardOverlay.children).forEach(key => {
+            key.classList.remove('target');
+        });
+        
+        // Highlight current target note
+        if (this.currentSongNoteIndex < this.melodyGuide.notes.length) {
+            const currentSongNote = this.melodyGuide.notes[this.currentSongNoteIndex];
+            const targetNoteName = currentSongNote[0];
+            const noteDuration = currentSongNote[1];
+            
+            // Calculate required hold time based on note duration and tempo
+            // 60 bpm = 1000ms per quarter note
+            const quarterNoteTime = (60 / this.melodyGuide.tempo) * 1000;
+            this.requiredHoldTime = quarterNoteTime * (noteDuration / 0.25); // 0.25 = 1/4 note
+            
+            // Handle rests
+            if (targetNoteName.trim() === '' || targetNoteName === ' ') {
+                this.handleRestNote();
+                return;
+            }
+            
+            const targetNoteIndex = this.noteNames.indexOf(targetNoteName);
+            if (targetNoteIndex >= 0) {
+                const targetKey = this.keyboardOverlay.children[targetNoteIndex];
+                if (targetKey) {
+                    targetKey.classList.add('target');
+                }
+            }
+        }
+    }
+    
+    /**
+     * Clear song guide visual display
+     */
+    clearSongGuideDisplay() {
+        if (!this.keyboardOverlay) {
+            return;
+        }
+        
+        Array.from(this.keyboardOverlay.children).forEach(key => {
+            key.classList.remove('target', 'timer-fill');
+            key.style.removeProperty('--fill-percent');
+        });
+        
+        // Clear rest timer if active
+        if (this.restTimer) {
+            clearTimeout(this.restTimer);
+            this.restTimer = null;
+        }
+    }
+    
+    /**
+     * Register clickable elements for gesture interaction
+     */
+    registerClickableElements() {
+        if (!this.handGestures) return;
+        
+        // Clear previous registrations
+        this.handGestures.clearClickableElements();
+        
+        // Register stop button
+        const stopButton = document.getElementById('stop-btn');
+        if (stopButton) {
+            this.handGestures.registerClickableElement(stopButton, () => {
+                this.stopVideoGestures();
+            });
+        }
+        
+        // Register flip button (top left corner)
+        const flipBtn = document.getElementById('flip-btn');
+        if (flipBtn) {
+            this.handGestures.registerClickableElement(flipBtn, () => {
+                this.toggleCameraFlip();
+            });
+        }
+        
+        // Maximize functionality removed
+        
+        const songGuideBtn = document.getElementById('song-guide-btn');
+        if (songGuideBtn) {
+            this.handGestures.registerClickableElement(songGuideBtn, () => {
+                this.toggleSongGuide();
+            });
+        }
+    }
+    
+    /**
+     * Show keyboard overlay
+     */
+    showKeyboardOverlay() {
+        if (this.keyboardOverlay) {
+            this.keyboardOverlay.classList.add('visible');
+            // Ensure perfect coverage after showing
+            setTimeout(() => this.updateOverlayCoverage(), 50);
+        }
+    }
+    
+    /**
+     * Hide keyboard overlay
+     */
+    hideKeyboardOverlay() {
+        if (this.keyboardOverlay) {
+            this.keyboardOverlay.classList.remove('visible');
+            // Clear any active highlighting
+            this.updateKeyboardHighlight(-1, false);
+            
+            // Also clear all highlighting from all keys
+            Array.from(this.keyboardOverlay.children).forEach(key => {
+                key.classList.remove('active', 'hover');
+            });
+        }
+    }
+
+    /**
+     * Show video controls when gestures are running
      */
     showStopOverlay() {
         const videoSection = document.getElementById('video-section');
         
-        // Create stop overlay if it doesn't exist
-        let stopOverlay = document.getElementById('video-stop-overlay');
-        if (!stopOverlay) {
-            stopOverlay = document.createElement('div');
-            stopOverlay.id = 'video-stop-overlay';
-            stopOverlay.className = 'video-play-overlay';
-            stopOverlay.innerHTML = '<div class="video-stop-text">Click to Stop</div>';
-            videoSection.appendChild(stopOverlay);
+        // Create video controls if they don't exist
+        let videoControls = document.getElementById('video-controls');
+        if (!videoControls) {
+            videoControls = document.createElement('div');
+            videoControls.id = 'video-controls';
+            videoControls.className = 'video-controls';
+            
+            // Left side controls
+            const leftControls = document.createElement('div');
+            leftControls.className = 'video-controls-left';
+            
+            // Flip button
+            const flipBtn = document.createElement('button');
+            flipBtn.id = 'flip-btn';
+            flipBtn.className = 'video-control-btn';
+            flipBtn.textContent = '↔';
+            flipBtn.title = 'Flip Camera';
+            
+            leftControls.appendChild(flipBtn);
+            
+            // Center controls
+            const centerControls = document.createElement('div');
+            centerControls.className = 'video-controls-center';
+            centerControls.style.cssText = 'position: absolute; left: 50%; transform: translateX(-50%); display: flex; gap: 0.25rem;';
+            
+            // Song guide button (moved to center)
+            const songGuideBtn = document.createElement('button');
+            songGuideBtn.id = 'song-guide-btn';
+            songGuideBtn.className = 'video-control-btn';
+            songGuideBtn.textContent = '🎵';
+            songGuideBtn.title = 'Start/Stop Song Guide';
+            
+            centerControls.appendChild(songGuideBtn);
+            
+            // Right side controls
+            const rightControls = document.createElement('div');
+            rightControls.className = 'video-controls-right';
+            
+            // Stop button (moved to right with X icon)
+            const stopBtn = document.createElement('button');
+            stopBtn.id = 'stop-btn';
+            stopBtn.className = 'video-control-btn';
+            stopBtn.textContent = '✕';
+            stopBtn.title = 'Stop Gestures';
+            
+            rightControls.appendChild(stopBtn);
+            
+            // Assemble video controls
+            videoControls.appendChild(leftControls);
+            videoControls.appendChild(centerControls);
+            videoControls.appendChild(rightControls);
+            videoSection.appendChild(videoControls);
+            
+            // Add event listeners
+            flipBtn.addEventListener('click', () => this.toggleCameraFlip());
+            stopBtn.addEventListener('click', () => this.stopVideoGestures());
+            songGuideBtn.addEventListener('click', () => this.toggleSongGuide());
+            
+            // Ensure perfect coverage after creating controls
+            setTimeout(() => this.updateOverlayCoverage(), 50);
         }
-        
-        stopOverlay.classList.remove('hidden');
     }
     
     /**
-     * Setup stop overlay click handler
+     * Setup video interaction handlers
      */
     setupStopOverlay() {
-        // Use event delegation since stop overlay is created dynamically
-        document.addEventListener('click', (e) => {
-            if (e.target.closest('#video-stop-overlay')) {
-                this.stopVideoGestures();
-            }
-        });
-        
-        // Also handle clicks on the video itself when gestures are running
+        // Handle clicks on the video itself when gestures are running to stop them
         document.addEventListener('click', (e) => {
             const videoSection = document.getElementById('video-section');
             const clickedVideo = e.target.closest('video');
@@ -204,27 +1037,188 @@ class WaveformGenerator {
         });
     }
     
+    // Maximize functionality removed - video overlay mode now serves this purpose
+    
+    /**
+     * Toggle camera flip
+     */
+    toggleCameraFlip() {
+        if (!this.handGestures) return;
+        
+        // Toggle flip setting
+        this.handGestures.settings.flipHorizontal = !this.handGestures.settings.flipHorizontal;
+        this.isVideoFlipped = this.handGestures.settings.flipHorizontal;
+        
+        // Apply CSS transform to video element for visual mirroring in normal mode
+        const video = this.handGestures.getVideoElement();
+        if (video) {
+            if (this.isVideoFlipped) {
+                // Flipped mode: show actual camera view (with centering)
+                video.style.transform = 'translate(-50%, -50%) scaleX(1)';
+            } else {
+                // Normal mode: mirror the video for natural interaction (with centering)
+                video.style.transform = 'translate(-50%, -50%) scaleX(-1)';
+            }
+        }
+        
+        // Update keyboard overlay orientation
+        this.updateKeyboardOrientation();
+        
+        // If gestures are running, update MediaPipe settings
+        if (this.gesturesRunning && this.handGestures.hands) {
+            this.handGestures.hands.setOptions({
+                flipHorizontal: this.handGestures.settings.flipHorizontal,
+                selfieMode: !this.handGestures.settings.flipHorizontal
+            });
+        }
+        
+        this.showToast(`Camera ${this.isVideoFlipped ? 'flipped' : 'normal'}`, 'info');
+    }
+    
+    /**
+     * Toggle song guide on/off
+     */
+    toggleSongGuide() {
+        const songGuideBtn = document.getElementById('song-guide-btn');
+        
+        if (!this.songGuideActive) {
+            this.songGuideActive = true;
+            this.currentSongNoteIndex = 0;
+            songGuideBtn.classList.add('active');
+            songGuideBtn.title = 'Stop Song Guide';
+            this.updateSongGuideDisplay();
+            this.showToast('Song guide started! Follow the highlighted notes.', 'info', 3000);
+        } else {
+            this.songGuideActive = false;
+            songGuideBtn.classList.remove('active');
+            songGuideBtn.title = 'Start Song Guide';
+            this.clearSongGuideDisplay();
+            this.clearNoteTimer();
+            this.showToast('Song guide stopped.', 'info');
+        }
+    }
+    
     /**
      * Stop video gestures and show play overlay
      */
     stopVideoGestures() {
         if (this.handGestures && this.gesturesRunning) {
-            this.handGestures.stop();
-            this.gesturesRunning = false;
-            
-            // Hide stop overlay
-            const stopOverlay = document.getElementById('video-stop-overlay');
-            if (stopOverlay) {
-                stopOverlay.classList.add('hidden');
+            try {
+                this.handGestures.stop();
+                this.gesturesRunning = false;
+                
+                // Stop song guide
+                if (this.songGuideActive) {
+                    this.toggleSongGuide();
+                }
+                
+                // Clear any pending rest timer
+                if (this.restTimer) {
+                    clearTimeout(this.restTimer);
+                    this.restTimer = null;
+                }
+                
+                // Hide video controls
+                const videoControls = document.getElementById('video-controls');
+                if (videoControls) {
+                    videoControls.remove();
+                }
+                
+                // Clear clickable element registrations
+                if (this.handGestures) {
+                    this.handGestures.clearClickableElements();
+                }
+                
+                // Hide keyboard overlay
+                this.hideKeyboardOverlay();
+                
+                // Hide video overlay and return to oscilloscope
+                this.hideVideoOverlay();
+                
+                // Always reset initialization state when stopping
+                // MediaPipe/WebGL resources get cleaned up and need fresh initialization
+                this.gesturesInitialized = false;
+                
+                this.showToast('Hand gestures stopped.', 'info');
+                
+            } catch (error) {
+                console.error('Error stopping hand gestures:', error);
+                
+                // Reset the initialization state
+                this.gesturesInitialized = false;
+                this.handGestures = null;
+                
+                this.showToast('Hand gestures stopped with errors. Next start will reinitialize.', 'warning');
             }
-            
-            // Show play overlay again
-            const playOverlay = document.getElementById('video-play-overlay');
-            playOverlay.classList.remove('hidden');
-            playOverlay.innerHTML = '<div class="video-play-icon"></div>';
-            
-            this.showToast('Hand gestures stopped.', 'info');
         }
+    }
+
+    /**
+     * Show video overlay on top of oscilloscope
+     */
+    showVideoOverlay() {
+        const videoOverlay = document.getElementById('video-overlay');
+        const videoSection = document.getElementById('video-section');
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const displayControls = document.querySelector('.display-controls');
+        
+        // Show video overlay
+        videoOverlay.classList.remove('hidden');
+        
+        // Hide oscilloscope elements
+        if (waveformCanvas) {
+            waveformCanvas.style.display = 'none';
+        }
+        if (displayControls) {
+            displayControls.style.display = 'none';
+        }
+        
+        // Set video elements to relative positioning for proper sizing
+        videoOverlay.style.position = 'relative';
+        if (videoSection) {
+            videoSection.style.position = 'relative';
+        }
+        
+        // Hide corner buttons
+        this.hideCornerButtons();
+        
+        // Update video sizing for responsive behavior
+        if (this.handGestures) {
+            this.handGestures.updateVideoSizing();
+        }
+        
+        // Ensure perfect coverage after showing
+        setTimeout(() => this.updateOverlayCoverage(), 50);
+    }
+    
+    /**
+     * Hide video overlay and return to oscilloscope
+     */
+    hideVideoOverlay() {
+        const videoOverlay = document.getElementById('video-overlay');
+        const videoSection = document.getElementById('video-section');
+        const waveformCanvas = document.getElementById('waveformCanvas');
+        const displayControls = document.querySelector('.display-controls');
+        
+        // Hide video overlay
+        videoOverlay.classList.add('hidden');
+        
+        // Show oscilloscope elements
+        if (waveformCanvas) {
+            waveformCanvas.style.display = '';
+        }
+        if (displayControls) {
+            displayControls.style.display = '';
+        }
+        
+        // Reset video elements to original positioning
+        videoOverlay.style.position = '';
+        if (videoSection) {
+            videoSection.style.position = '';
+        }
+        
+        // Show corner buttons
+        this.showCornerButtons();
     }
 
     /**
@@ -265,6 +1259,8 @@ class WaveformGenerator {
         // Update square wave controls after DOM is fully ready
         setTimeout(() => {
             this.updateSquareWaveControls();
+            // Start attention animation for first-time users
+            this.addAttentionAnimation();
         }, 100);
     }
     
@@ -877,29 +1873,7 @@ class WaveformGenerator {
      * Draw measurement indicators and values on the display
      */
     drawMeasurements() {
-        const ctx = this.ctx;
-        
-        // Set text style
-        ctx.font = '12px Consolas, monospace';
-        ctx.fillStyle = '#00bfff';
-        
-        // Frequency display
-        ctx.fillText(`${this.frequency.toFixed(1)} Hz`, 10, 20);
-        
-        // Peak-to-peak amplitude
-        const maxValue = Math.max(...this.waveformData);
-        const minValue = Math.min(...this.waveformData);
-        const peakToPeak = maxValue - minValue;
-        ctx.fillText(`Vpp: ${peakToPeak.toFixed(3)}V`, 10, 40);
-        
-        // RMS value
-        const rms = Math.sqrt(this.waveformData.reduce((sum, val) => sum + val * val, 0) / this.bufferSize);
-        ctx.fillText(`RMS: ${rms.toFixed(3)}V`, 10, 60);
-        
-        // Time/div and V/div indicators  
-        const displayWidth = this.canvasDisplayWidth || parseInt(this.canvas.style.width) || this.canvas.width;
-        ctx.fillText(`${this.timeScale.toFixed(1)}ms/div`, displayWidth - 100, 20);
-        ctx.fillText(`${this.ampScale.toFixed(1)}V/div`, displayWidth - 100, 40);
+        // All measurement displays removed for cleaner oscilloscope view
     }
     
     /**
@@ -982,6 +1956,14 @@ class WaveformGenerator {
                         // Redraw the waveform
                         this.drawWaveform();
                         
+                        // Update video sizing for responsive behavior
+                        if (this.handGestures) {
+                            this.handGestures.updateVideoSizing();
+                        }
+                        
+                        // Ensure overlays maintain perfect coverage
+                        this.updateOverlayCoverage();
+                        
                         // Reset counter after successful resize
                         setTimeout(() => { resizeCount = 0; }, 1000);
                     }
@@ -1000,12 +1982,137 @@ class WaveformGenerator {
         // Initial resize after layout stabilizes
         setTimeout(() => {
             resizeCanvas();
+            // Also ensure initial overlay coverage
+            this.updateOverlayCoverage();
         }, 200);
         
         // Setup touch interactions for mobile
         this.setupMobileInteractions();
     }
     
+    /**
+     * Update overlay coverage to ensure exact video area coverage
+     */
+    updateOverlayCoverage() {
+        const videoSection = document.getElementById('video-section');
+        if (!videoSection) return;
+        
+        // Get all overlay elements that need to maintain perfect coverage
+        const overlays = [
+            document.getElementById('video-overlay'),
+            document.querySelector('.keyboard-overlay'),
+            document.getElementById('video-controls')
+        ].filter(element => element !== null);
+        
+        // Get the video element to match its actual dimensions if visible
+        const video = this.handGestures ? this.handGestures.getVideoElement() : null;
+        
+        // Ensure each overlay perfectly covers its intended area
+        overlays.forEach(overlay => {
+            if (overlay) {
+                // Force recalculation of dimensions
+                overlay.style.width = '';
+                overlay.style.height = '';
+                overlay.style.position = '';
+                overlay.style.top = '';
+                overlay.style.left = '';
+                overlay.style.bottom = '';
+                overlay.style.transform = '';
+                
+                // Trigger reflow to ensure proper sizing
+                overlay.offsetHeight;
+                
+                // For video overlays in video mode, match the video element's sizing behavior
+                if (video && video.style.display !== 'none' && overlay.closest('#video-overlay')) {
+                    // Check if we're in wide screen mode
+                    const isWideScreen = window.innerWidth > 768;
+                    
+                    if (isWideScreen) {
+                        // Wide screens: match video sizing (height 100%, width auto)
+                        // Get video actual dimensions to match exactly
+                        const videoRect = video.getBoundingClientRect();
+                        const containerRect = videoSection.getBoundingClientRect();
+                        
+                        if (overlay.classList.contains('keyboard-overlay')) {
+                            // Keyboard overlay: covers bottom 33% of video area, positioned within video bounds
+                            overlay.style.position = 'absolute';
+                            overlay.style.bottom = '0';
+                            overlay.style.left = `${(containerRect.width - videoRect.width) / 2}px`;
+                            overlay.style.transform = 'none';
+                            overlay.style.height = '33%';
+                            overlay.style.width = `${videoRect.width}px`;
+                        } else if (overlay.id === 'video-controls') {
+                            // Video controls: covers top area with correct height
+                            overlay.style.position = 'absolute';
+                            overlay.style.top = '0';
+                            overlay.style.left = `${(containerRect.width - videoRect.width) / 2}px`;
+                            overlay.style.transform = 'none';
+                            overlay.style.height = 'auto';
+                            overlay.style.minHeight = '60px';
+                            overlay.style.width = `${videoRect.width}px`;
+                        } else {
+                            // Full coverage overlays: match video dimensions exactly
+                            overlay.style.position = 'absolute';
+                            overlay.style.top = '50%';
+                            overlay.style.left = '50%';
+                            overlay.style.transform = 'translate(-50%, -50%)';
+                            overlay.style.height = `${videoRect.height}px`;
+                            overlay.style.width = `${videoRect.width}px`;
+                        }
+                    } else {
+                        // Narrow screens: width 100%, height auto to match video sizing
+                        if (overlay.classList.contains('keyboard-overlay')) {
+                            // Keyboard overlay: position at bottom
+                            overlay.style.position = 'absolute';
+                            overlay.style.bottom = '0';
+                            overlay.style.left = '0';
+                            overlay.style.right = '0';
+                            overlay.style.width = '100%';
+                            overlay.style.height = '33%';
+                        } else if (overlay.id === 'video-controls') {
+                            // Video controls: position at top with auto height
+                            overlay.style.position = 'absolute';
+                            overlay.style.top = '0';
+                            overlay.style.left = '0';
+                            overlay.style.right = '0';
+                            overlay.style.width = '100%';
+                            overlay.style.height = 'auto';
+                            overlay.style.minHeight = '60px';
+                        } else {
+                            // Full coverage overlays
+                            overlay.style.width = '100%';
+                            overlay.style.height = 'auto';
+                            overlay.style.minHeight = '100%';
+                        }
+                    }
+                } else {
+                    // Standard overlay sizing for oscilloscope mode
+                    if (overlay.classList.contains('keyboard-overlay')) {
+                        // Keyboard overlay covers bottom 33%
+                        overlay.style.position = 'absolute';
+                        overlay.style.bottom = '0';
+                        overlay.style.left = '0';
+                        overlay.style.right = '0';
+                        overlay.style.width = '100%';
+                        overlay.style.height = '33%';
+                    } else if (overlay.id === 'video-controls') {
+                        // Video controls cover top 20%
+                        overlay.style.position = 'absolute';
+                        overlay.style.top = '0';
+                        overlay.style.left = '0';
+                        overlay.style.right = '0';
+                        overlay.style.width = '100%';
+                        overlay.style.height = '20%';
+                    } else {
+                        // Full coverage overlays
+                        overlay.style.width = '100%';
+                        overlay.style.height = '100%';
+                    }
+                }
+            }
+        });
+    }
+
     /**
      * Setup mobile-specific interactions
      */
@@ -1095,9 +2202,8 @@ class WaveformGenerator {
             this.isPlaying = true;
             
             // Update UI
-            document.getElementById('playStopBtn').textContent = 'Stop';
-            document.getElementById('playStopBtn').classList.remove('btn-primary');
-            document.getElementById('playStopBtn').style.background = 'linear-gradient(145deg, #ff4444, #cc0000)';
+            document.getElementById('playStopBtn').textContent = '⏹';
+            document.getElementById('playStopBtn').classList.add('playing');
             
         } catch (error) {
             console.error('Error starting audio:', error);
@@ -1163,9 +2269,8 @@ class WaveformGenerator {
         }
         
         // Update UI
-        document.getElementById('playStopBtn').textContent = 'Play';
-        document.getElementById('playStopBtn').classList.add('btn-primary');
-        document.getElementById('playStopBtn').style.background = '';
+        document.getElementById('playStopBtn').textContent = '▶';
+        document.getElementById('playStopBtn').classList.remove('playing');
     }
     
     /**
@@ -1814,6 +2919,64 @@ class WaveformGenerator {
          });
      }
      
+    /**
+     * Hide corner buttons when in video mode
+     */
+    hideCornerButtons() {
+        // Hide play corner button
+        const playCornerTab = document.querySelector('.play-corner-tab');
+        if (playCornerTab) {
+            playCornerTab.style.display = 'none';
+        }
+        
+        // Hide video mode corner button
+        const gestureCornerTab = document.querySelector('.gesture-corner-tab');
+        if (gestureCornerTab) {
+            gestureCornerTab.style.display = 'none';
+        }
+    }
+    
+    /**
+     * Show corner buttons when returning to oscilloscope mode
+     */
+    showCornerButtons() {
+        // Show play corner button
+        const playCornerTab = document.querySelector('.play-corner-tab');
+        if (playCornerTab) {
+            playCornerTab.style.display = '';
+        }
+        
+        // Show video mode corner button
+        const gestureCornerTab = document.querySelector('.gesture-corner-tab');
+        if (gestureCornerTab) {
+            gestureCornerTab.style.display = '';
+        }
+        
+        // Restore attention animation if user hasn't used video mode yet
+        if (!this.hasEverUsedVideoMode) {
+            this.addAttentionAnimation();
+        }
+    }
+    
+    /**
+     * Add attention-drawing animation to gesture button for first-time users
+     */
+    addAttentionAnimation() {
+        const gesturePlayBtn = document.getElementById('gesturePlayBtn');
+        if (gesturePlayBtn) {
+            gesturePlayBtn.classList.add('attention-pulse');
+        }
+    }
+    
+    /**
+     * Remove attention animation when user enters video mode
+     */
+    removeAttentionAnimation() {
+        const gesturePlayBtn = document.getElementById('gesturePlayBtn');
+        if (gesturePlayBtn) {
+            gesturePlayBtn.classList.remove('attention-pulse');
+        }
+    }
 
  }
  
