@@ -2,7 +2,6 @@ class HandGestures {
   constructor(options = {}) {
     // Create internal elements
     this.video = document.createElement('video');
-    this.video.setAttribute('autoplay', '');
     this.video.setAttribute('playsinline', '');
     this.video.style.display = 'none'; // Hidden by default
     this.video.style.position = 'absolute';
@@ -164,11 +163,14 @@ class HandGestures {
   
   async start() {
     try {
+      // Only request camera access when explicitly starting
       this.stream = await navigator.mediaDevices.getUserMedia({ 
         video: { width: this.canvas.width, height: this.canvas.height } 
       });
       
       this.video.srcObject = this.stream;
+      
+      // Manually start video playback - no autoplay
       await this.video.play();
       
       this.camera = new Camera(this.video, {
